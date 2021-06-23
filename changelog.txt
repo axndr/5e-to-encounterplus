@@ -1,0 +1,4 @@
+6/22/21
+-moved sections out of folders into module root
+-implemented images for source books
+-Enabled image folder to be seen

@@ -82,26 +82,28 @@ def setup_modules():
     source_list = json.loads(Path(data_fp, 'books.json').read_bytes().decode())['book']
 
     # Add location of where their book is inside 5e.tools site data
-    for adventure in adventure_list:
-        adventure['type'] = 'adventure'
-        adventure['json_fp'] = Path(data_fp, 'adventure', f'adventure-{slugify(adventure.get("id"))}.json')
+    # for adventure in adventure_list:
+    #     adventure['type'] = 'adventure'
+    #     adventure['json_fp'] = Path(data_fp, 'adventure', f'adventure-{slugify(adventure.get("id"))}.json')
 
     for source in source_list:
         source['type'] = 'book'
         source['json_fp'] = Path(data_fp, 'book', f'book-{slugify(source.get("id"))}.json')
 
-    # Start working on converting each item
-    for adventure in adventure_list:
-        # adventure = adventure_list[1]
-        logger.info('starting adventures')
-        adventure['module_root'] = create_filesys(adventure)
-        fill_book_contents(adventure)
-        # fill_book_md(adventure)
-        fill_module_yaml(adventure)
-        try:
-            copy_images(adventure)
-        except FileNotFoundError:
-            logger.info(f'No images found for {adventure.get("name")}')
+    # # Start working on converting each item
+    # for adventure in adventure_list:
+    #     # adventure = adventure_list[1]
+    #     logger.info('starting adventures')
+    #     adventure['module_root'] = create_filesys(adventure)
+    #     fill_book_contents(adventure)
+    #     # fill_book_md(adventure)
+    #     fill_module_yaml(adventure)
+    #     try:
+    #         copy_images(adventure)
+    #     except FileNotFoundError:
+    #         logger.info(f'No images found for {adventure.get("name")}')
+
+    source_list.insert(0, source_list[18])
 
     for source in source_list:
         if source['id'] == 'rmr':
@@ -113,7 +115,10 @@ def setup_modules():
             fill_book_contents(source)
             # fill_book_md(source)
             fill_module_yaml(source)
-            copy_images(source)
+            try:
+                copy_images(source)
+            except FileNotFoundError:
+                logger.info(f'No images found for {source.get("name")}')
 
 
 def create_filesys(module) -> Path:
@@ -125,9 +130,12 @@ def create_filesys(module) -> Path:
             # os.mkdir(Path(path, "Maps"))
             # os.mkdir(Path(path, "Images"))
             os.mkdir(f'{path}\\img')
-            open(Path(path, "img", '.ignoregroup'), "a").close()
+            # Enabled the img folder to be seen
+            # open(Path(path, "img", '.ignoregroup'), "a").close()
             if module['type'] == 'adventure':
                 os.mkdir(f'{path}\\img\\adventure')
+            elif module['type'] == 'book':
+                os.mkdir(f'{path}\\img\\book')
             os.mkdir(Path(path, "data"))
             open(Path(path, "data", '.ignoregroup'), "a").close()
             # open(Path(path, f'{slugify(module.get("name"))}.md'), "a").close()
@@ -176,17 +184,22 @@ def fill_book_contents(module):
             section['index'] = index
 
             # ! Filepath with colon problem
-            section['section_root'] = f'{module.get("module_root")}\\{section.get("name").replace(":", "").replace(".", "")}'
+            section['section_root'] = str(Path(Path.cwd(), 'output', slugify(module.get("id"))))
+
+            # Previously was storing each section in it's own file. Above removed that and sets section root as module root
+            # section['section_root'] = f'{module.get("module_root")}\\{section.get("name").replace(":", "").replace(".", "")}'
 
             # dump the section json into a text doc in /data and create a section filesystem for the output
             try:
+                # Removed section folders, everything going into module root
                 os.mkdir(section['section_root'])
                 # os.mkdir(f'{section["section_root"]}\\img')
                 # if module['type'] == 'adventure':
                 #     os.mkdir(f'{section["section_root"]}\\img\\adventure')
-                os.mkdir(f'{section["section_root"]}\\Encounters')
+                # os.mkdir(f'{section["section_root"]}\\Encounters')
                 # os.mkdir(f'{section["section_root"]}\\Maps')
                 # open(Path(section['section_root'], "img", '.ignoregroup'), "a").close()
+                pass
             except OSError:
                 logger.error('Error creating file structure.')
 
@@ -226,7 +239,8 @@ def fill_book_contents(module):
                 writer.write(text_to_write)
                 logger.info(f'{section.get("name")}: md been written')
 
-            fill_group_yaml(module, section)
+            # Disabled section files, don't need group yamls
+            # fill_group_yaml(module, section)
 
 
 def fill_group_yaml(module, section):
@@ -249,6 +263,7 @@ def fill_book_md(module):
         f"---\n" \
         f"name: {module.get('name')}\n" \
         f"slug: {slugify(module.get('id'))}\n" \
+        f"module-pagebreak: h1, h2, h3\n" \
         f"---\n"
     # f"parent: {slugify(module.get('id'))}-main\n" \
     # f"order: {options.get('order')}\n" \
@@ -269,12 +284,17 @@ def fill_module_yaml(module):
     except KeyError:
         level_start, level_end = ('custom', 'custom')
 
+    if module['type'] == 'adventure':
+        type = 'other'
+    else:
+        type = 'other'
+
     page_template = \
         f'id: {uuid.uuid4()}\n'\
         f'name: {module.get("name")}\n'\
         f'slug: {slugify(module.get("id"))}-main\n'\
         f'description: Storyline - {module.get("storyline")}, Levels - {level_start}-{level_end}, Published - {module.get("published")}\n'\
-        f'category: {module.get("type")}\n'\
+        f'category: {type}\n'\
         f'author: WoTC\n'\
         f'cover: img\\{module.get("id")}.png\n'\
         f'version: 1\n'\
@@ -303,36 +323,34 @@ def copy_images(module):
         module["coverURL"] = Path(img_fp, 'covers', f'{module["id"][0:module["id"].find("-")]}.png')
         shutil.copy(module["coverURL"], f'{module["module_root"]}\\img')
 
-    if module['type'] == 'adventure':
-        try:
-            source = f'{img_fp}\\{"adventure"}\\{module["id"]}'
-            dest = f'{module["module_root"]}\\img\\adventure\\{module["id"]}'
-            shutil.copytree(source, dest)
-        except FileNotFoundError:
-            source = f'{img_fp}\\{"adventure"}\\{module["id"][0:module["id"].find("-")]}'
-            dest = f'{module["module_root"]}\\img\\adventure\\{module["id"][0:module["id"].find("-")]}'
-            shutil.copytree(source, dest)
+    try:
+        source = f'{img_fp}\\{module.get("type")}\\{module["id"]}'
+        dest = f'{module["module_root"]}\\img\\{module.get("type")}\\{module["id"]}'
+        shutil.copytree(source, dest)
+    except FileNotFoundError:
+        source = f'{img_fp}\\{module.get("type")}\\{module["id"][0:module["id"].find("-")]}'
+        dest = f'{module["module_root"]}\\img\\{module.get("type")}\\{module["id"][0:module["id"].find("-")]}'
+        shutil.copytree(source, dest)
 
-        for index, filename in enumerate(os.listdir(dest)):
-            src = Path(dest, filename)
-            dst = Path(dest, filename.replace(' ', '-'))
-            os.rename(src, dst)
+    for index, filename in enumerate(os.listdir(dest)):
+        src = Path(dest, filename)
+        dst = Path(dest, filename.replace(' ', '-'))
+        os.rename(src, dst)
 
 
 def fix_images(text) -> str:
     # grabs the images file names and locations and calls grab_images() to move them to the directory
     pattern = '\[(img.*?)\?v.*?\](?=\n|$|\[|\()'
     r = re.compile(pattern)
-    grab_images(re.findall(pattern, text))
 
     # makes the replacement in the text contents
-    pattern = '\[(img\/adventure\/.*?\/)(.*?)\?v.*?](?:\n|$|(?:\((.*?)\)(?:(?=\[)|(?=\n)|(?=$))))'
+    pattern = '\[(img\/.*?\/.*?\/)(.*?)\?v.*?](?:\n|$|(?:\((.*?)\)(?:(?=\[)|(?=\n)|(?=$))))'
     r = re.compile(pattern)
     matches = r.findall(text)
 
     # TODO: grab it first, replace it and grab it again
 
-    text = r.sub(fr'\n![\3](../\1\2)\n', text)
+    text = r.sub(fr'\n![\3](\1\2)\n', text)
     # try:
     #     value = m_iter.__next__()
     #     text = r.sub(fr'![\3](../{value.group(1)}{value.group(2).replace(" ", "-")})\n', text)
@@ -352,7 +370,28 @@ def fix_images(text) -> str:
 
     # x = str(map(lambda value: r.sub(fr'![\2]({value.group(1).replace(" ", "-")})', text), m_matches))
 
-def grab_images(image_list):
+
+def fix_links():
+    """
+    {@creature Carrionette|VRGR}
+    {@creature Gibbering mouther}
+    {@book chapter 5|VRGR|5|Priests of Osybus}
+    {@book Keepers of the Feather|VRGR|3|Keepers of the Feather}
+    {@book Monster Manual|MM}
+    {@book MM|MM}
+    {@book chapter 5|VRGR|5}
+    {@adventure Curse of Strahd|CoS}
+    {@creature Vine Blight||vine blights}
+    {@i Domain of Alien Memories} # itallics
+    {@spell modify memory}
+    {@b star spawn emissary} # bolded
+    {@spell greater restoration}
+    {@condition poisoned}
+    {@skill Investigation}
+    {@dice 1d6}
+
+    :return:
+    """
     pass
 
 
