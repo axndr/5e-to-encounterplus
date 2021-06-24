@@ -2,3 +2,11 @@
 -moved sections out of folders into module root
 -implemented images for source books
 -Enabled image folder to be seen
+
+6/22/21
+-added todo items
+-fixed module['type'] to be set correctly in module.yaml
+
+6/23/21
+-fixed regex not capturing description after image link when immediately followed by text instead of whitespace
+-fixed TODO: Tales from the Yawning Portal games have a colon in the title

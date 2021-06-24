@@ -82,28 +82,34 @@ def setup_modules():
     source_list = json.loads(Path(data_fp, 'books.json').read_bytes().decode())['book']
 
     # Add location of where their book is inside 5e.tools site data
-    # for adventure in adventure_list:
-    #     adventure['type'] = 'adventure'
-    #     adventure['json_fp'] = Path(data_fp, 'adventure', f'adventure-{slugify(adventure.get("id"))}.json')
+    for adventure in adventure_list:
+        adventure['type'] = 'adventure'
+        adventure['json_fp'] = Path(data_fp, 'adventure', f'adventure-{slugify(adventure.get("id"))}.json')
 
     for source in source_list:
         source['type'] = 'book'
         source['json_fp'] = Path(data_fp, 'book', f'book-{slugify(source.get("id"))}.json')
 
-    # # Start working on converting each item
-    # for adventure in adventure_list:
-    #     # adventure = adventure_list[1]
-    #     logger.info('starting adventures')
-    #     adventure['module_root'] = create_filesys(adventure)
-    #     fill_book_contents(adventure)
-    #     # fill_book_md(adventure)
-    #     fill_module_yaml(adventure)
-    #     try:
-    #         copy_images(adventure)
-    #     except FileNotFoundError:
-    #         logger.info(f'No images found for {adventure.get("name")}')
+    adventure_list = [adventure_list[38]]
 
-    source_list.insert(0, source_list[18])
+    # Grabbing my favorites
+    # adventure_list = [adventure_list[0], adventure_list[5], adventure_list[11], adventure_list[16], adventure_list[18],
+    #                   adventure_list[20], adventure_list[38]]
+    source_list = [source_list[0], source_list[1], source_list[2], source_list[7], source_list[8], source_list[14],
+                   source_list[15], source_list[16], source_list[18]]
+
+    # Start working on converting each item
+    for adventure in adventure_list:
+        # adventure = adventure_list[1]
+        logger.info('starting adventures')
+        adventure['module_root'] = create_filesys(adventure)
+        fill_book_contents(adventure)
+        # fill_book_md(adventure)
+        fill_module_yaml(adventure)
+        try:
+            copy_images(adventure)
+        except FileNotFoundError:
+            logger.info(f'No images found for {adventure.get("name")}')
 
     for source in source_list:
         if source['id'] == 'rmr':
@@ -285,13 +291,13 @@ def fill_module_yaml(module):
         level_start, level_end = ('custom', 'custom')
 
     if module['type'] == 'adventure':
-        type = 'other'
+        type = 'adventure'
     else:
         type = 'other'
 
     page_template = \
         f'id: {uuid.uuid4()}\n'\
-        f'name: {module.get("name")}\n'\
+        f'name: {module.get("name").replace(":", " -")}\n'\
         f'slug: {slugify(module.get("id"))}-main\n'\
         f'description: Storyline - {module.get("storyline")}, Levels - {level_start}-{level_end}, Published - {module.get("published")}\n'\
         f'category: {type}\n'\
@@ -316,6 +322,10 @@ def fill_module_yaml(module):
 
 
 def copy_images(module):
+    # TODO: The covers for Tales from the Yawning Portal have a different naming convention
+    # cover: img\TftYP - TSC.png    < Bad
+    # cover: img\TftYP.png          < Good
+
     try:
         module["coverURL"] = Path(img_fp, 'covers', f'{module["id"]}.png')
         shutil.copy(module["coverURL"], f'{module["module_root"]}\\img')
@@ -344,7 +354,7 @@ def fix_images(text) -> str:
     r = re.compile(pattern)
 
     # makes the replacement in the text contents
-    pattern = '\[(img\/.*?\/.*?\/)(.*?)\?v.*?](?:\n|$|(?:\((.*?)\)(?:(?=\[)|(?=\n)|(?=$))))'
+    pattern = '\[(img\/.*?)\?v.*?](?:\n|$|(\(.*?(?:(?=\[)|\n|$|\)(?=\w))))'
     r = re.compile(pattern)
     matches = r.findall(text)
 
