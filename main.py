@@ -3,7 +3,6 @@ import json
 import logging
 from datetime import datetime
 from selenium import webdriver
-from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.options import Options
@@ -17,6 +16,8 @@ import zipfile
 import uuid
 import shutil
 import re
+import subprocess
+from modulepackermaster import launcher
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -90,44 +91,63 @@ def setup_modules():
         source['type'] = 'book'
         source['json_fp'] = Path(data_fp, 'book', f'book-{slugify(source.get("id"))}.json')
 
-    adventure_list = [adventure_list[38]]
+    # adventure_list = [adventure_list[38]]
 
     # Grabbing my favorites
-    # adventure_list = [adventure_list[0], adventure_list[5], adventure_list[11], adventure_list[16], adventure_list[18],
-    #                   adventure_list[20], adventure_list[38]]
+    adventure_list = [adventure_list[0], adventure_list[5], adventure_list[11], adventure_list[16], adventure_list[18],
+                      adventure_list[20], adventure_list[38]]
     source_list = [source_list[0], source_list[1], source_list[2], source_list[7], source_list[8], source_list[14],
                    source_list[15], source_list[16], source_list[18]]
 
     # Start working on converting each item
+    logger.info('starting adventures')
     for adventure in adventure_list:
         # adventure = adventure_list[1]
-        logger.info('starting adventures')
-        adventure['module_root'] = create_filesys(adventure)
-        fill_book_contents(adventure)
-        # fill_book_md(adventure)
-        fill_module_yaml(adventure)
-        try:
-            copy_images(adventure)
-        except FileNotFoundError:
-            logger.info(f'No images found for {adventure.get("name")}')
+        exists = create_filesys(adventure)
+        adventure['module_root'] = exists[0]
+        if exists[1]:
+            # If the filesys had to be created, fill in everything
+            fill_book_contents(adventure)
+            # fill_book_md(adventure)
+            fill_module_yaml(adventure)
+            try:
+                copy_images(adventure)
+            except FileNotFoundError:
+                logger.info(f'No images found for {adventure.get("name")}')
+            # generate_module(adventure)
+        else:
+            logger.info(f'{adventure.get("id")} exists')
 
+    logger.info('starting sources')
     for source in source_list:
         if source['id'] == 'rmr':
             logger.info('skipping rmr')
             continue
         else:
-            logger.info('starting sources')
-            source['module_root'] = create_filesys(source)
-            fill_book_contents(source)
-            # fill_book_md(source)
-            fill_module_yaml(source)
-            try:
-                copy_images(source)
-            except FileNotFoundError:
-                logger.info(f'No images found for {source.get("name")}')
+            exists = create_filesys(source)
+            source['module_root'] = exists[0]
+            if exists[1]:
+                fill_book_contents(source)
+                # fill_book_md(source)
+                fill_module_yaml(source)
+                try:
+                    copy_images(source)
+                except FileNotFoundError:
+                    logger.info(f'No images found for {source.get("name")}')
+                # generate_module(source)
+            else:
+                logger.info(f'{source.get("id")} exists')
 
 
-def create_filesys(module) -> Path:
+def create_filesys(module):
+    """
+
+    :param module:
+    :return: (Path to module, 0 = already exists/1 = created)
+    """
+    if os.path.exists(Path(Path.cwd(), 'output', slugify(module.get("id")))):
+        return Path(Path.cwd(), 'output', slugify(module.get("id"))), 0
+
     path = Path(Path.cwd(), 'output', slugify(module.get("id")))
     try:
         os.mkdir(path)
@@ -136,8 +156,7 @@ def create_filesys(module) -> Path:
             # os.mkdir(Path(path, "Maps"))
             # os.mkdir(Path(path, "Images"))
             os.mkdir(f'{path}\\img')
-            # Enabled the img folder to be seen
-            # open(Path(path, "img", '.ignoregroup'), "a").close()
+            open(Path(path, "img", '.ignoregroup'), "a").close()
             if module['type'] == 'adventure':
                 os.mkdir(f'{path}\\img\\adventure')
             elif module['type'] == 'book':
@@ -152,10 +171,11 @@ def create_filesys(module) -> Path:
         logger.error(f'{module.get("name")} already exists')
     logger.info(f'{module.get("name")}: filesystem created')
 
-    return path
+    return path, 1
 
 
 def fill_book_contents(module):
+    print(f'working on {module.get("id")}')
     json_contents = json.loads(module['json_fp'].read_bytes().decode())
 
     # # ! Turn on headless once finished
@@ -163,7 +183,7 @@ def fill_book_contents(module):
     #
     # if headless:
     #     chrome_options.add_argument("--headless")
-
+    #
     with webdriver.Chrome(PATH, options=chrome_options) as wd:
         wait = WebDriverWait(wd, 5)
 
@@ -230,17 +250,19 @@ def fill_book_contents(module):
                             f'name: {section.get("name").replace(":", " -")}\n' \
                             f"slug: {slugify(module.get('id'))}-{slugify(section.get('name'))}-page\n" \
                             f"order: {section.get('index')}\n" \
+                            f"module-pagebreaks: h1, h2, h3, h4\n" \
                             f"footer: My Custom Footer Texts\n" \
                             f"hide-footer: false\n" \
                             f"hide-footer-text: true\n" \
                             f"include-in: all\n" \
                             f"print-cover-only: false\n" \
                             f"---\n"
-    # f"parent: {slugify(module.get('id'))}-{slugify(section.get('name'))}-contents\n" \
+            # f"parent: {slugify(module.get('id'))}-{slugify(section.get('name'))}-contents\n" \
 
             text_to_write = fix_images(converted_json.text)
 
-            with open(f'{section["section_root"]}\\{slugify(section.get("name"))}.md', "w+", encoding="utf-8") as writer:
+            with open(f'{section["section_root"]}\\{slugify(section.get("name"))}.md', "w+",
+                      encoding="utf-8") as writer:
                 writer.write(page_template)
                 writer.write(text_to_write)
                 logger.info(f'{section.get("name")}: md been written')
@@ -249,41 +271,59 @@ def fill_book_contents(module):
             # fill_group_yaml(module, section)
 
 
-def fill_group_yaml(module, section):
-    page_template = \
-        f"name: {section.get('name').replace(':', ' -')}\n" \
-        f"slug: {slugify(module.get('id'))}-{slugify(section.get('name'))}-contents\n" \
-        f"order: {section.get('index')+1}\n"\
-        f"include-in: all\n" \
-        f"copy-files: true\n" \
-    # f"parent: {slugify(module.get('id'))}-main\n" \
-    # f"order: {index}\n" \
+# def fill_group_yaml(module, section):
+#     '''
+#     Not using this
+#
+#     :param module:
+#     :param section:
+#     :return:
+#     '''
+#     page_template = \
+#         f"name: {section.get('name').replace(':', ' -')}\n" \
+#         f"slug: {slugify(module.get('id'))}-{slugify(section.get('name'))}-contents\n" \
+#         f"order: {section.get('index')+1}\n" \
+#         f"module-pagebreaks: h1, h2\n" \
+#         f"include-in: all\n" \
+#         f"copy-files: true\n" \
+#     # f"parent: {slugify(module.get('id'))}-main\n" \
+#     # f"order: {index}\n" \
+#
+#     # ! Filepath with colon problem
+#     with open(f'{module.get("module_root")}\\{section.get("name").replace(":", "").replace(".", "")}\\group.yaml', "w") as writer:
+#         writer.write(page_template)
 
-    # ! Filepath with colon problem
-    with open(f'{module.get("module_root")}\\{section.get("name").replace(":", "").replace(".", "")}\\group.yaml', "w") as writer:
-        writer.write(page_template)
 
-
-def fill_book_md(module):
-    page_template = \
-        f"---\n" \
-        f"name: {module.get('name')}\n" \
-        f"slug: {slugify(module.get('id'))}\n" \
-        f"module-pagebreak: h1, h2, h3\n" \
-        f"---\n"
-    # f"parent: {slugify(module.get('id'))}-main\n" \
-    # f"order: {options.get('order')}\n" \
-    # f"footer: My Custom Footer Texts\n" \
-    # f"hide-footer: false\n" \
-    # f"hide-footer-text: false\n" \
-    # f"include-in: all\n" \
-    # f"print-cover-only: false\n" \
-
-    with open(f'{module.get("module_root")}/{slugify(module.get("name"))}.md', "w") as writer:
-        writer.write(page_template)
+# def fill_book_md(module):
+#     """
+#     Isn't being used because I don't need it.
+#     """
+#
+#     if os.path.exists(f'{module.get("module_root")}/module.yaml'):
+#         return
+#
+#     page_template = \
+#         f"---\n" \
+#         f"name: {module.get('name')}\n" \
+#         f"slug: {slugify(module.get('id'))}\n" \
+#         f"module-pagebreak: h1, h2, h3\n" \
+#         f"---\n"
+#     # f"parent: {slugify(module.get('id'))}-main\n" \
+#     # f"order: {options.get('order')}\n" \
+#     # f"footer: My Custom Footer Texts\n" \
+#     # f"hide-footer: false\n" \
+#     # f"hide-footer-text: false\n" \
+#     # f"include-in: all\n" \
+#     # f"print-cover-only: false\n" \
+#
+#     with open(f'{module.get("module_root")}/{slugify(module.get("name"))}.md', "w") as writer:
+#         writer.write(page_template)
 
 
 def fill_module_yaml(module):
+    if os.path.exists(f'{module.get("module_root")}/module.yaml'):
+        return
+
     try:
         level_start = module["level"]["start"]
         level_end = module["level"]["end"]
@@ -296,16 +336,17 @@ def fill_module_yaml(module):
         type = 'other'
 
     page_template = \
-        f'id: {uuid.uuid4()}\n'\
-        f'name: {module.get("name").replace(":", " -")}\n'\
-        f'slug: {slugify(module.get("id"))}-main\n'\
-        f'description: Storyline - {module.get("storyline")}, Levels - {level_start}-{level_end}, Published - {module.get("published")}\n'\
-        f'category: {type}\n'\
-        f'author: WoTC\n'\
-        f'cover: img\\{module.get("id")}.png\n'\
-        f'version: 1\n'\
+        f'---\n' \
+        f'id: {uuid.uuid4()}\n' \
+        f'name: {module.get("name").replace(":", " -")}\n' \
+        f'slug: {slugify(module.get("id"))}-main\n' \
+        f'description: Storyline - {module.get("storyline")}, Levels - {level_start}-{level_end}, Published - {module.get("published")}\n' \
+        f'category: {type}\n' \
+        f'author: WoTC\n' \
+        f'cover: img\\{module.get("id")}.png\n' \
+        f'version: 1\n' \
         f'autoIncrementVersion: true\n' \
-    # f'print-cover: {module.get("coverURL")}\n'\
+        # f'print-cover: {module.get("coverURL")}\n'\
     # f'maps:
     # f'\tpath:
     # f'\torder:
@@ -327,11 +368,14 @@ def copy_images(module):
     # cover: img\TftYP.png          < Good
 
     try:
-        module["coverURL"] = Path(img_fp, 'covers', f'{module["id"]}.png')
-        shutil.copy(module["coverURL"], f'{module["module_root"]}\\img')
+        if module['coverUrl'][:16] == 'img/covers/TftYP':
+            module["coverUrl"] = Path(img_fp, 'covers', 'TftYP.png')
+        else:
+            module["coverUrl"] = Path(img_fp, 'covers', f'{module["id"]}.png')
+        shutil.copy(module["coverUrl"], f'{module["module_root"]}\\img')
     except FileNotFoundError:
-        module["coverURL"] = Path(img_fp, 'covers', f'{module["id"][0:module["id"].find("-")]}.png')
-        shutil.copy(module["coverURL"], f'{module["module_root"]}\\img')
+        module["coverUrl"] = Path(img_fp, 'covers', 'blank.png')
+        shutil.copy(module["coverUrl"], f'{module["module_root"]}\\img')
 
     try:
         source = f'{img_fp}\\{module.get("type")}\\{module["id"]}'
@@ -347,6 +391,8 @@ def copy_images(module):
         dst = Path(dest, filename.replace(' ', '-'))
         os.rename(src, dst)
 
+    create_image_page(module)
+
 
 def fix_images(text) -> str:
     # grabs the images file names and locations and calls grab_images() to move them to the directory
@@ -360,7 +406,7 @@ def fix_images(text) -> str:
 
     # TODO: grab it first, replace it and grab it again
 
-    text = r.sub(fr'\n![\3](\1\2)\n', text)
+    text = r.sub(fr'\n![\2](\1)\n', text)
     # try:
     #     value = m_iter.__next__()
     #     text = r.sub(fr'![\3](../{value.group(1)}{value.group(2).replace(" ", "-")})\n', text)
@@ -370,15 +416,57 @@ def fix_images(text) -> str:
     for match in matches:
         text = text.replace(f'{match[0]}{match[1]}', f'{match[0]}{match[1].replace(" ", "-")}')
 
-
-    #you've got matches
-    #you could cycle thorugh matches
-    #searching for the match string
-    #find it and replace it with a modified string
+    # you've got matches
+    # you could cycle thorugh matches
+    # searching for the match string
+    # find it and replace it with a modified string
 
     return text
 
     # x = str(map(lambda value: r.sub(fr'![\2]({value.group(1).replace(" ", "-")})', text), m_matches))
+
+
+def create_image_page(module):
+    images_fp = f'{module.get("module_root")}\\img\\{module.get("type")}\\{module.get("id")}'
+
+    with open(f'{module.get("module_root")}/Images.md', 'w') as w:
+        w.write(f'---\n'
+                f'name: Images\n'
+                f'slug: {module.get("id")}-images\n'
+                f'order: 100\n'
+                f'include-in: all\n'
+                f'copy-files: true\n'
+                f'---\n\n'
+                f'![](img\\{module.get("id")}.png)\n'
+                )
+        for index, filename in enumerate(os.listdir(images_fp)):
+            w.write(f'![](img\\{module.get("type")}\\{module.get("id")}\\{filename})\n')
+
+
+def generate_module(module):
+    # args = ['python', 'launcher.py', '--path', '"..\\output\\{module.get("id")}"', 'run']
+    # p = subprocess.Popen(args, cwd=Path(Path.cwd(), 'modulepackermaster'), shell=True)
+    # p.wait()
+
+    path = f'output\\{module.get("id")}'
+    output = module.get('id')
+
+    launcher.removeIfExists('modulepackermaster/package.json')
+    launcher.removeIfExists('modulepackermaster/package-lock.json')
+    launcher.removeDirIfExists('modulepackermaster/cli-out')
+    launcher.processTarget('makeFolders')
+    launcher.copy('modulepackermaster/cli/package.cli.json', 'modulepackermaster/package.json')
+    # launcher.run('npm.cmd install')
+    p = subprocess.Popen(['npm', 'install'], cwd=Path(Path.cwd(), 'modulepackermaster'), shell=True)
+    p = subprocess.Popen(['npm run compile-css'], cwd=Path(Path.cwd(), 'modulepackermaster'), shell=True)
+    p = subprocess.Popen(['npm run compile-cli'], cwd=Path(Path.cwd(), 'modulepackermaster'), shell=True)
+    launcher.run(f'node modulepackermaster/cli-out/cli/main.js "{path}" ""')
+
+
+    # moduleproject.module
+    src = Path(Path.cwd(), 'output', module['id'], 'moduleproject.module')
+    dst = Path(Path.cwd(), 'output', module['id'], f'{module.get("id")}.module')
+    os.rename(src, dst)
 
 
 def fix_links():

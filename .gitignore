@@ -111,6 +111,8 @@ fabric.properties
 # End of https://www.toptal.com/developers/gitignore/api/pycharm
 
 output/
+output - Copy/
+
 
 sources/
 
@@ -121,3 +123,13 @@ templates/
 *.log
 
 .idea
+
+# Module Packer generated files
+modulepackermaster
+node_modules
+extension-out
+dist
+cli-out
+app-out
+
+
