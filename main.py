@@ -103,20 +103,16 @@ def setup_modules():
     logger.info('starting adventures')
     for adventure in adventure_list:
         # adventure = adventure_list[1]
-        exists = create_filesys(adventure)
-        adventure['module_root'] = exists[0]
-        if exists[1]:
-            # If the filesys had to be created, fill in everything
-            fill_book_contents(adventure)
-            # fill_book_md(adventure)
-            fill_module_yaml(adventure)
-            try:
-                copy_images(adventure)
-            except FileNotFoundError:
-                logger.info(f'No images found for {adventure.get("name")}')
-            # generate_module(adventure)
-        else:
-            logger.info(f'{adventure.get("id")} exists')
+
+        adventure['module_root'] = create_filesys(adventure)
+        fill_book_contents(adventure)
+        # fill_book_md(adventure)
+        fill_module_yaml(adventure)
+        try:
+            copy_images(adventure)
+        except FileNotFoundError:
+            logger.info(f'No images found for {adventure.get("name")}')
+        # generate_module(adventure)
 
     logger.info('starting sources')
     for source in source_list:
@@ -124,19 +120,16 @@ def setup_modules():
             logger.info('skipping rmr')
             continue
         else:
-            exists = create_filesys(source)
-            source['module_root'] = exists[0]
-            if exists[1]:
-                fill_book_contents(source)
-                # fill_book_md(source)
-                fill_module_yaml(source)
-                try:
-                    copy_images(source)
-                except FileNotFoundError:
-                    logger.info(f'No images found for {source.get("name")}')
-                # generate_module(source)
-            else:
-                logger.info(f'{source.get("id")} exists')
+            source['module_root'] = create_filesys(source)
+            fill_book_contents(source)
+            # fill_book_md(source)
+            fill_module_yaml(source)
+            try:
+                copy_images(source)
+            except FileNotFoundError:
+                logger.info(f'No images found for {source.get("name")}')
+            # generate_module(source)
+
 
 
 def create_filesys(module):
@@ -145,9 +138,6 @@ def create_filesys(module):
     :param module:
     :return: (Path to module, 0 = already exists/1 = created)
     """
-    if os.path.exists(Path(Path.cwd(), 'output', slugify(module.get("id")))):
-        return Path(Path.cwd(), 'output', slugify(module.get("id"))), 0
-
     path = Path(Path.cwd(), 'output', slugify(module.get("id")))
     try:
         os.mkdir(path)
@@ -171,7 +161,7 @@ def create_filesys(module):
         logger.error(f'{module.get("name")} already exists')
     logger.info(f'{module.get("name")}: filesystem created')
 
-    return path, 1
+    return path
 
 
 def fill_book_contents(module):
@@ -250,7 +240,7 @@ def fill_book_contents(module):
                             f'name: {section.get("name").replace(":", " -")}\n' \
                             f"slug: {slugify(module.get('id'))}-{slugify(section.get('name'))}-page\n" \
                             f"order: {section.get('index')}\n" \
-                            f"module-pagebreaks: h1, h2, h3, h4\n" \
+                            f"module-pagebreaks: h1, h2, h3\n" \
                             f"footer: My Custom Footer Texts\n" \
                             f"hide-footer: false\n" \
                             f"hide-footer-text: true\n" \
@@ -321,9 +311,6 @@ def fill_book_contents(module):
 
 
 def fill_module_yaml(module):
-    if os.path.exists(f'{module.get("module_root")}/module.yaml'):
-        return
-
     try:
         level_start = module["level"]["start"]
         level_end = module["level"]["end"]
@@ -335,6 +322,8 @@ def fill_module_yaml(module):
     else:
         type = 'other'
 
+    # TODO: Need to fix cover for tales
+    # correct > cover: img/TftYP.png
     page_template = \
         f'---\n' \
         f'id: {uuid.uuid4()}\n' \
@@ -343,7 +332,7 @@ def fill_module_yaml(module):
         f'description: Storyline - {module.get("storyline")}, Levels - {level_start}-{level_end}, Published - {module.get("published")}\n' \
         f'category: {type}\n' \
         f'author: WoTC\n' \
-        f'cover: img\\{module.get("id")}.png\n' \
+        f'cover: img/{module.get("id")}.png\n' \
         f'version: 1\n' \
         f'autoIncrementVersion: true\n' \
         # f'print-cover: {module.get("coverURL")}\n'\
@@ -373,6 +362,9 @@ def copy_images(module):
         else:
             module["coverUrl"] = Path(img_fp, 'covers', f'{module["id"]}.png')
         shutil.copy(module["coverUrl"], f'{module["module_root"]}\\img')
+        # src = f'{module["module_root"]}\\img\\{module["id"]}.png'
+        # dst = f'{module["module_root"]}\\img\\{module["id"]}.jpg'
+        # os.rename(src, dst)
     except FileNotFoundError:
         module["coverUrl"] = Path(img_fp, 'covers', 'blank.png')
         shutil.copy(module["coverUrl"], f'{module["module_root"]}\\img')
@@ -413,8 +405,11 @@ def fix_images(text) -> str:
     # except StopIteration:
     #     pass
 
+    #     match[1]                            match[0]
+    # ![(The Sword Coast (Player))\n](img / adventure / LMoP / The Sword Coast (Player).jpg)   < Original
+
     for match in matches:
-        text = text.replace(f'{match[0]}{match[1]}', f'{match[0]}{match[1].replace(" ", "-")}')
+        text = text.replace(f'![{match[1]}]({match[0]})', f'![{match[1].replace("(", "").replace(")", "")}]({match[0].replace(" ", "-")})')
 
     # you've got matches
     # you could cycle thorugh matches
@@ -432,15 +427,18 @@ def create_image_page(module):
     with open(f'{module.get("module_root")}/Images.md', 'w') as w:
         w.write(f'---\n'
                 f'name: Images\n'
-                f'slug: {module.get("id")}-images\n'
+                f'slug: {slugify(module.get("id"))}-images\n'
                 f'order: 100\n'
+                f"module-pagebreaks: h1, h2\n" \
                 f'include-in: all\n'
                 f'copy-files: true\n'
                 f'---\n\n'
-                f'![](img\\{module.get("id")}.png)\n'
+                f'# Cover, Maps and Images\n'
+                f'![](img/{module.get("id")}.png)\n'
                 )
         for index, filename in enumerate(os.listdir(images_fp)):
-            w.write(f'![](img\\{module.get("type")}\\{module.get("id")}\\{filename})\n')
+            w.write(f'## {filename}\n')
+            w.write(f'![](img/{module.get("type")}/{module.get("id")}/{filename})\n\n')
 
 
 def generate_module(module):
